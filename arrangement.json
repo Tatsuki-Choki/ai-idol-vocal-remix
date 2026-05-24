@@ -6,12 +6,12 @@
 
   "video": {
     "audio": "build/mix_v3_final.wav",
-    "output": "build/movie_v1.mp4",
+    "output": "build/movie_v2.mp4",
     "resolution": "1920x1080",
     "fps": 30,
-    "fontsize": 140,
+    "fontsize": 120,
     "fontfile": "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
-    "unison_label": "全員"
+    "dim_level": 60
   },
 
   "vocalists": {
@@ -25,7 +25,7 @@
     { "label": "Bメロ1", "start": 30.0,  "end": 52.0,  "vocals": ["instant"] },
     { "label": "サビ1",  "start": 52.0,  "end": 94.0,  "vocals": ["original", "instant", "second"], "gain_db": -4 },
     { "label": "Aメロ2", "start": 96.0,  "end": 116.0, "vocals": ["second"] },
-    { "label": "Bメロ2", "start": 118.0, "end": 130.5, "vocals": ["original"] },
+    { "label": "Bメロ2", "start": 118.0, "end": 130.5, "vocals": ["second"] },
     { "label": "サビ2",  "start": 130.5, "end": 187.5, "vocals": ["original", "instant", "second"], "gain_db": -4 },
     { "label": "ラスサビ", "start": 210.0, "end": 261.0, "vocals": ["original", "instant", "second"], "gain_db": -4 }
   ],

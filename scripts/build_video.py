@@ -1,30 +1,21 @@
 #!/usr/bin/env python3
-"""arrangement.json を読み、黒背景＋パート名テロップの YouTube 用動画を書き出す。
+"""arrangement.json を読み、黒背景に全メンバー名を常時並べた YouTube 用動画を書き出す。
 
-各セクションの区間に、歌っている人の名前を白いゴシック体で中央表示する:
-  - ソロ（1人）  -> その人の display 名（例「ミク」）
-  - 全員ユニゾン  -> video.unison_label（例「全員」）
-  - 一部複数      -> 名前を「・」で連結
-歌唱区間の外（イントロ・間奏・アウトロ）は真っ黒（文字なし）。
+3人（vocalists 全員）の名前を横一列に常に表示し、各セクションで「歌っている人」
+だけを白く（不透明）、歌っていない人を薄く（video.dim_level の明度）表示する。
+  - ソロ区間   -> その人だけ濃く、他2人は薄い
+  - 全員ユニゾン -> 全員濃い
+  - イントロ/間奏/アウトロ -> 全員薄い
+表示名・区間・フォント・薄さは arrangement.json 側で管理する。
 
-このマシンの ffmpeg は drawtext 非対応のため、テロップは Pillow で
-フレーム画像に焼いてから concat で動画化する。表示名・区間・フォント等は
-すべて arrangement.json 側で管理する。
-
-依存: Pillow, ffmpeg。使い方: python3 scripts/build_video.py [arrangement.json]
+このマシンの ffmpeg は drawtext 非対応のため、Pillow でフレーム画像を作り
+concat で動画化する。依存: Pillow, ffmpeg。
+使い方: python3 scripts/build_video.py [arrangement.json]
 """
 import sys, json, os, subprocess, tempfile, shutil
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def label_for(vocals, vocalists, unison_label):
-    if len(vocals) == 1:
-        return vocalists[vocals[0]]["display"]
-    if len(vocals) == len(vocalists):
-        return unison_label
-    return "・".join(vocalists[v]["display"] for v in vocals)
 
 
 def audio_duration(path):
@@ -34,11 +25,16 @@ def audio_duration(path):
     return float(out.strip())
 
 
-def make_frame(text, w, h, font, path):
+def make_frame(active, vocalists, w, h, font, dim, path):
+    """vocalists 全員を横一列に表示。active に含まれる人は白、他は明度 dim の灰。"""
     img = Image.new("RGB", (w, h), "black")
-    if text:
-        d = ImageDraw.Draw(img)
-        d.text((w / 2, h / 2), text, fill="white", font=font, anchor="mm")
+    d = ImageDraw.Draw(img)
+    names = list(vocalists.items())
+    n = len(names)
+    for i, (key, cfg) in enumerate(names):
+        x = w * (i + 0.5) / n
+        v = 255 if key in active else dim  # 明度で「透明度」を表現（黒地に白〜灰）
+        d.text((x, h / 2), cfg["display"], fill=(v, v, v), font=font, anchor="mm")
     img.save(path)
 
 
@@ -46,40 +42,39 @@ def main(arr_path):
     with open(arr_path, encoding="utf-8") as f:
         arr = json.load(f)
     v = arr["video"]
+    vocalists = arr["vocalists"]
     audio = os.path.join(ROOT, v["audio"])
     out = os.path.join(ROOT, v["output"])
     os.makedirs(os.path.dirname(out), exist_ok=True)
     w, h = (int(x) for x in v["resolution"].split("x"))
     font = ImageFont.truetype(v["fontfile"], v["fontsize"])
-    unison = v.get("unison_label", "全員")
+    dim = v.get("dim_level", 60)
 
-    # 歌唱セクションと、その隙間（イントロ/間奏/アウトロ=空白）でタイムラインを埋める
+    # 各区間で「誰が歌っているか」(active) を決める。隙間は誰もいない=全員薄い。
     secs = sorted(arr["sections"], key=lambda s: s["start"])
     dur = audio_duration(audio)
     timeline, t = [], 0.0
     for sec in secs:
         if sec["start"] > t:
-            timeline.append((sec["start"] - t, ""))  # 直前セクションとの隙間（間奏）
-        timeline.append((sec["end"] - sec["start"],
-                         label_for(sec["vocals"], arr["vocalists"], unison)))
+            timeline.append((sec["start"] - t, frozenset()))
+        timeline.append((sec["end"] - sec["start"], frozenset(sec["vocals"])))
         t = sec["end"]
     if t < dur:
-        timeline.append((dur - t, ""))
+        timeline.append((dur - t, frozenset()))
 
-    # ユニークなラベルごとにフレーム画像を1枚だけ生成して使い回す
+    # active 状態の組み合わせごとにフレーム画像を1枚だけ生成して使い回す
     tmp = tempfile.mkdtemp()
     frames = {}
-    for _, text in timeline:
-        if text not in frames:
+    for _, active in timeline:
+        if active not in frames:
             p = os.path.join(tmp, f"f{len(frames)}.png")
-            make_frame(text, w, h, font, p)
-            frames[text] = p
+            make_frame(active, vocalists, w, h, font, dim, p)
+            frames[active] = p
 
-    # concat demuxer 用リスト（最後のフレームは duration なしでもう一度書く）
     listf = os.path.join(tmp, "list.txt")
     with open(listf, "w", encoding="utf-8") as f:
-        for d, text in timeline:
-            f.write(f"file '{frames[text]}'\nduration {d:.3f}\n")
+        for d_, active in timeline:
+            f.write(f"file '{frames[active]}'\nduration {d_:.3f}\n")
         f.write(f"file '{frames[timeline[-1][1]]}'\n")
 
     cmd = [
@@ -89,7 +84,7 @@ def main(arr_path):
         "-vf", f"fps={v.get('fps',30)},format=yuv420p",
         "-c:v", "libx264", "-preset", "medium",
         "-c:a", "aac", "-b:a", "320k",
-        "-t", f"{dur:.3f}",  # 音声長で映像を切る（末尾に余分な黒が残らないように）
+        "-t", f"{dur:.3f}",
         "-shortest", out,
     ]
     print("ffmpeg 実行中...")

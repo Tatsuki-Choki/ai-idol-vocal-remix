@@ -35,7 +35,7 @@ python3 scripts/build_video.py [arrangement.json]
   - モノラル音源はステレオに複製、`apply_pan()` で等パワー定位
   - 各セクション境界に `crossfade_sec` のフェード窓（`fade_window()`）をかけて段差・ノイズを防ぐ
   - セクション単位の `gain_db` を適用後、全トラック合成。ピークが0.99超なら全体を正規化して音割れを防止
-- **`scripts/build_video.py`** — `arrangement.json` を読み、黒背景＋パート名テロップの動画を書き出す。ラベルは `label_for()` が決定: ソロ→`display`名 / 全員→`unison_label` / 一部複数→`・`連結。歌唱区間の隙間は黒画面で自動補完。
+- **`scripts/build_video.py`** — `arrangement.json` を読み、黒背景に全メンバー名を横一列で常時表示する動画を書き出す。各区間で歌っている人(`active`)だけを白(255)、他は明度 `video.dim_level` の灰で描き、「歌っている人をハイライト」する。歌唱区間の隙間は全員薄い。`active` の組み合わせ（frozenset）ごとにフレームを1枚キャッシュして concat。
 - **`stems/`** — 入力素材。原則いじらない。`bgm/` と `vocals/`（`NN_name.wav` の連番命名）。
 - **`analysis/vocal_sections.csv`** — 歌唱(`sing`)/無音(`gap`)の区間データ。セクション境界を決める参考値。
 - **`build/`** — 書き出し生成物。

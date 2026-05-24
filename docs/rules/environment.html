@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>依存と環境制約</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.7; color: #1a1a1a; }
+    h1 { border-bottom: 2px solid #333; padding-bottom: 0.5rem; }
+    h2 { margin-top: 2rem; color: #2c5282; }
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; }
+    pre { background: #f7f7f7; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 0.8rem 1rem; margin: 1rem 0; }
+    .info { background: #e8f4fd; border-left: 4px solid #2196f3; padding: 0.8rem 1rem; margin: 1rem 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+    th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <h1>依存と環境制約</h1>
+
+  <h2>依存</h2>
+  <table>
+    <tr><th>スクリプト</th><th>依存</th></tr>
+    <tr><td><code>build_mix.py</code></td><td><code>numpy</code> のみ（WAV 入出力は標準ライブラリ <code>wave</code>）</td></tr>
+    <tr><td><code>build_video.py</code></td><td><code>Pillow</code> と <code>ffmpeg</code></td></tr>
+    <tr><td>区間解析</td><td><code>numpy</code> / <code>ffprobe</code></td></tr>
+  </table>
+
+  <h2>ffmpeg が drawtext 非対応（重要）</h2>
+  <div class="warning">
+    このマシンの ffmpeg（Homebrew 8.0.1）は <strong>libfreetype 無し</strong>でビルドされており、
+    <code>drawtext</code> フィルタが使えない（<code>No such filter: 'drawtext'</code>）。
+    そのため <code>build_video.py</code> はテロップを <strong>Pillow で画像化</strong>し、
+    <strong>concat demuxer</strong> で動画化している。<u>drawtext 方式には戻さないこと。</u>
+  </div>
+
+  <h2>concat の末尾フレーム伸び対策</h2>
+  <p>
+    concat demuxer は最後の画像の <code>duration</code> を無視するため、放置すると映像が音源より数秒長くなる。
+    ffmpeg 出力に <code>-t {音源長}</code> を付けて映像尺を音源に揃えている。
+  </p>
+
+  <h2>フォント</h2>
+  <p>
+    テロップは <code>/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc</code> を使用。
+    日本語ネイティブのゴシック体でカタカナ・漢字とも字形が自然。
+  </p>
+  <div class="info">
+    フォントパスに日本語・空白が含まれる。<code>build_video.py</code> は Pillow の
+    <code>ImageFont.truetype()</code> に直接パスを渡すため問題ないが、ffmpeg 側に
+    フォントパスを渡す方式へ変える場合は空白なしの一時パスへコピーすること。
+  </div>
+</body>
+</html>

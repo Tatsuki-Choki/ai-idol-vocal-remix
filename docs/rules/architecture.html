@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>アーキテクチャと arrangement.json スキーマ</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.7; color: #1a1a1a; }
+    h1 { border-bottom: 2px solid #333; padding-bottom: 0.5rem; }
+    h2 { margin-top: 2rem; color: #2c5282; }
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; }
+    pre { background: #f7f7f7; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 0.8rem 1rem; margin: 1rem 0; }
+    .info { background: #e8f4fd; border-left: 4px solid #2196f3; padding: 0.8rem 1rem; margin: 1rem 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+    th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <h1>アーキテクチャと arrangement.json スキーマ</h1>
+
+  <div class="info">
+    <strong>中心思想 — データ駆動の設計。</strong>
+    編集作業はコード（<code>scripts/*.py</code>）ではなく <code>arrangement.json</code> の編集で完結する。
+    スクリプトは楽曲・人数に非依存な汎用エンジンとして保ち、楽曲固有の判断はすべて JSON 側に置く。
+  </div>
+
+  <h2>arrangement.json（単一の真実の源）</h2>
+  <p>音源書き出し（<code>build_mix.py</code>）と動画書き出し（<code>build_video.py</code>）の両方がこのファイルを読む。</p>
+
+  <h3>トップレベル</h3>
+  <table>
+    <tr><th>キー</th><th>意味</th></tr>
+    <tr><td><code>bgm</code></td><td>土台のインスト音源パス</td></tr>
+    <tr><td><code>output</code></td><td>音源の書き出し先パス</td></tr>
+    <tr><td><code>crossfade_sec</code></td><td>セクション境界のフェード秒数（段差・ノイズ防止）</td></tr>
+    <tr><td><code>master_gain_db</code></td><td>全体音量（dB）</td></tr>
+    <tr><td><code>vocalists</code></td><td>歌い手の定義（下記）</td></tr>
+    <tr><td><code>sections</code></td><td>区間と割り当て（下記）</td></tr>
+    <tr><td><code>video</code></td><td>動画書き出し設定（下記）</td></tr>
+  </table>
+
+  <h3>vocalists</h3>
+  <p>名前（内部キー）→ 設定のマップ。</p>
+  <table>
+    <tr><th>フィールド</th><th>意味</th></tr>
+    <tr><td><code>file</code></td><td>ボーカル音源パス</td></tr>
+    <tr><td><code>gain_db</code></td><td>その声の音量（dB）</td></tr>
+    <tr><td><code>pan</code></td><td>定位 -1.0=左 / 0=中央 / 1.0=右（等パワー）</td></tr>
+    <tr><td><code>display</code></td><td>動画に表示する名前（例「ミク」）</td></tr>
+  </table>
+
+  <h3>sections（配列）</h3>
+  <table>
+    <tr><th>フィールド</th><th>意味</th></tr>
+    <tr><td><code>label</code></td><td>区間名（Aメロ1 等、人間用ラベル）</td></tr>
+    <tr><td><code>start</code> / <code>end</code></td><td>区間（秒）</td></tr>
+    <tr><td><code>vocals</code></td><td>その区間で鳴らす声のキー配列。<strong>並べた数だけユニゾンで重なる</strong></td></tr>
+    <tr><td><code>gain_db</code>（任意）</td><td>セクション単位の音量。重ね数の多いサビを下げて正規化を弱める用途</td></tr>
+  </table>
+
+  <h3>video</h3>
+  <table>
+    <tr><th>フィールド</th><th>意味</th></tr>
+    <tr><td><code>audio</code></td><td>動画に乗せる音源（通常トップレベル <code>output</code> と同じ）</td></tr>
+    <tr><td><code>output</code></td><td>動画の書き出し先パス（mp4）</td></tr>
+    <tr><td><code>resolution</code></td><td>解像度（例 <code>1920x1080</code>）</td></tr>
+    <tr><td><code>fps</code></td><td>フレームレート</td></tr>
+    <tr><td><code>fontsize</code></td><td>テロップの文字サイズ（px）</td></tr>
+    <tr><td><code>fontfile</code></td><td>フォントパス（現行: ヒラギノ角ゴシック W6）</td></tr>
+    <tr><td><code>dim_level</code></td><td>歌っていない人の明度（0=黒〜255=白）。「透明度」を明度で表現</td></tr>
+  </table>
+
+  <h2>スクリプト</h2>
+  <h3>scripts/build_mix.py（音源エンジン）</h3>
+  <ul>
+    <li>BGM をステレオ float32 で土台にし、各セクションのボーカルを加算合成する。</li>
+    <li>モノラル音源はステレオに複製、<code>apply_pan()</code> で等パワー定位。</li>
+    <li>各セクション境界に <code>crossfade_sec</code> のフェード窓（<code>fade_window()</code>）をかけて段差・ノイズを防ぐ。</li>
+    <li>セクション単位の <code>gain_db</code> を適用後に全トラック合成。ピークが 0.99 超なら全体を正規化して音割れを防止。</li>
+  </ul>
+
+  <h3>scripts/build_video.py（動画エンジン）</h3>
+  <ul>
+    <li>黒背景に <code>vocalists</code> 全員の名前を横一列で常時表示する。</li>
+    <li>各区間で歌っている人（<code>active</code>）だけを白(255)、他は明度 <code>dim_level</code> の灰で描き、「歌っている人をハイライト」する。</li>
+    <li>歌唱区間の隙間（イントロ・間奏・アウトロ）は全員薄い。</li>
+    <li><code>active</code> の組み合わせ（frozenset）ごとにフレーム画像を1枚キャッシュし、concat demuxer で動画化する。</li>
+  </ul>
+
+  <h2>ディレクトリ</h2>
+  <table>
+    <tr><th>パス</th><th>役割</th></tr>
+    <tr><td><code>stems/</code></td><td>入力素材（原則いじらない）。<code>bgm/</code> と <code>vocals/</code>（<code>NN_name.wav</code> の連番命名）</td></tr>
+    <tr><td><code>analysis/vocal_sections.csv</code></td><td>歌唱(<code>sing</code>)/無音(<code>gap</code>)の区間データ。セクション境界を決める参考値</td></tr>
+    <tr><td><code>build/</code></td><td>書き出し生成物（音源・動画）</td></tr>
+  </table>
+</body>
+</html>
